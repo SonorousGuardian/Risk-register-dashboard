@@ -1,7 +1,3 @@
-Here is a complete description you can use for your GitHub repository's `README.md` file.
-
------
-
 # 📊 Risk Register Dashboard with Streamlit
 
 This project is a comprehensive, single-file web application for Governance, Risk, and Compliance (GRC) management. Built with Python and Streamlit, it transforms a standard risk register from a CSV or Excel file into a dynamic, interactive dashboard.
