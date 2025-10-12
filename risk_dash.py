@@ -9,8 +9,7 @@ from datetime import datetime, date
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(
-    page_title="GRC Dashboard",
-    page_icon="🛡️",
+    page_title="Risk Register Dashboard",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -232,4 +231,5 @@ def main():
     st.caption("dashboard created by amritesh")
 
 if __name__ == "__main__":
+
     main()
