@@ -50,16 +50,6 @@ Install the required Python libraries using the `requirements.txt` file.
 pip install -r requirements.txt
 ```
 
-*(If you don't have a `requirements.txt` file, you can create one with the following content:)*
-
-```
-streamlit
-pandas
-numpy
-plotly
-openpyxl
-```
-
 ### 3\. Run the App
 
 Launch the Streamlit application from your terminal:
