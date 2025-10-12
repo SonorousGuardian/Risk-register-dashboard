@@ -1,0 +1,121 @@
+Risk ID,Title,Risk Owner,Risk Category,Likelihood,Impact,Risk Score,Status,Control Effectiveness,Last Updated
+R-1000,Sample risk 1,Compliance,Business Continuity,3,5,15,Mitigated,Medium,2025-06-28
+R-1001,Sample risk 2,Compliance,Business Continuity,3,3,9,Closed,High,2025-05-22
+R-1002,Sample risk 3,IT,Access Control,1,5,5,Mitigated,Low,2025-07-12
+R-1003,Sample risk 4,Security,Access Control,2,4,8,Closed,Low,2025-10-06
+R-1004,Sample risk 5,Operations,Data Protection,4,3,12,Open,Medium,2025-05-05
+R-1005,Sample risk 6,IT,Access Control,3,1,3,Mitigated,Medium,2025-07-13
+R-1006,Sample risk 7,Operations,Access Control,1,4,4,Mitigated,Low,2025-07-04
+R-1007,Sample risk 8,Security,Third-party,2,4,8,Mitigated,Low,2025-09-07
+R-1008,Sample risk 9,Operations,Access Control,4,5,20,Open,Medium,2025-07-05
+R-1009,Sample risk 10,IT,Access Control,3,3,9,Mitigated,Medium,2025-09-18
+R-1010,Sample risk 11,IT,Data Protection,4,2,8,Open,Low,2025-08-31
+R-1011,Sample risk 12,Compliance,Data Protection,2,4,8,Mitigated,High,2025-05-25
+R-1012,Sample risk 13,Operations,Third-party,5,5,25,Open,Medium,2025-06-15
+R-1013,Sample risk 14,Compliance,Configuration,3,4,12,Mitigated,Low,2025-08-23
+R-1014,Sample risk 15,Compliance,Data Protection,4,3,12,Accepted,Low,2025-08-16
+R-1015,Sample risk 16,IT,Access Control,2,1,2,Mitigated,Medium,2025-09-12
+R-1016,Sample risk 17,Finance,Access Control,4,3,12,Closed,Medium,2025-07-09
+R-1017,Sample risk 18,IT,Business Continuity,5,4,20,Closed,High,2025-05-28
+R-1018,Sample risk 19,Security,Access Control,3,5,15,Open,High,2025-08-21
+R-1019,Sample risk 20,Operations,Business Continuity,2,3,6,Closed,Low,2025-09-16
+R-1020,Sample risk 21,Compliance,Third-party,3,3,9,Open,High,2025-08-10
+R-1021,Sample risk 22,Operations,Data Protection,2,3,6,Open,Medium,2025-04-26
+R-1022,Sample risk 23,IT,Business Continuity,2,3,6,Open,Low,2025-08-05
+R-1023,Sample risk 24,Finance,Data Protection,5,3,15,Mitigated,Medium,2025-06-06
+R-1024,Sample risk 25,Operations,Configuration,3,5,15,Open,Low,2025-05-22
+R-1025,Sample risk 26,Compliance,Data Protection,3,4,12,Open,Medium,2025-07-16
+R-1026,Sample risk 27,Operations,Configuration,5,3,15,Accepted,High,2025-09-09
+R-1027,Sample risk 28,IT,Third-party,4,2,8,Closed,Medium,2025-10-09
+R-1028,Sample risk 29,Compliance,Access Control,5,5,25,Open,High,2025-06-13
+R-1029,Sample risk 30,Operations,Business Continuity,2,5,10,Closed,Medium,2025-04-23
+R-1030,Sample risk 31,Compliance,Access Control,2,4,8,Closed,High,2025-09-13
+R-1031,Sample risk 32,Operations,Access Control,5,5,25,Mitigated,Medium,2025-07-22
+R-1032,Sample risk 33,Security,Third-party,5,3,15,Accepted,Medium,2025-09-30
+R-1033,Sample risk 34,Finance,Access Control,2,1,2,Open,Medium,2025-09-06
+R-1034,Sample risk 35,Compliance,Configuration,3,3,9,Mitigated,Medium,2025-09-19
+R-1035,Sample risk 36,Compliance,Configuration,5,3,15,Accepted,Medium,2025-05-12
+R-1036,Sample risk 37,Operations,Business Continuity,4,5,20,Mitigated,Medium,2025-06-02
+R-1037,Sample risk 38,Finance,Business Continuity,1,5,5,Closed,Medium,2025-05-21
+R-1038,Sample risk 39,Finance,Configuration,5,3,15,Closed,Low,2025-09-21
+R-1039,Sample risk 40,Security,Data Protection,5,3,15,Open,High,2025-06-20
+R-1040,Sample risk 41,Security,Configuration,3,2,6,Open,Medium,2025-07-27
+R-1041,Sample risk 42,Finance,Third-party,4,4,16,Closed,High,2025-09-14
+R-1042,Sample risk 43,IT,Access Control,4,2,8,Accepted,Medium,2025-09-05
+R-1043,Sample risk 44,Operations,Third-party,1,5,5,Open,Medium,2025-07-09
+R-1044,Sample risk 45,Finance,Third-party,3,2,6,Closed,Medium,2025-10-01
+R-1045,Sample risk 46,Operations,Business Continuity,4,3,12,Mitigated,High,2025-07-31
+R-1046,Sample risk 47,Finance,Access Control,4,2,8,Open,Medium,2025-09-29
+R-1047,Sample risk 48,Operations,Third-party,4,5,20,Open,High,2025-06-16
+R-1048,Sample risk 49,Security,Business Continuity,3,4,12,Open,Low,2025-08-19
+R-1049,Sample risk 50,Security,Third-party,4,3,12,Open,Medium,2025-08-18
+R-1050,Sample risk 51,Finance,Business Continuity,1,2,2,Mitigated,Medium,2025-06-22
+R-1051,Sample risk 52,Operations,Third-party,4,3,12,Open,High,2025-05-13
+R-1052,Sample risk 53,IT,Access Control,2,1,2,Open,Low,2025-10-07
+R-1053,Sample risk 54,Finance,Third-party,4,3,12,Mitigated,Medium,2025-05-18
+R-1054,Sample risk 55,Compliance,Third-party,2,1,2,Mitigated,Medium,2025-04-18
+R-1055,Sample risk 56,Security,Data Protection,4,5,20,Closed,Medium,2025-07-07
+R-1056,Sample risk 57,Operations,Data Protection,3,3,9,Mitigated,Medium,2025-07-24
+R-1057,Sample risk 58,Security,Configuration,4,4,16,Open,Low,2025-07-18
+R-1058,Sample risk 59,Security,Configuration,3,1,3,Open,Medium,2025-07-16
+R-1059,Sample risk 60,Security,Configuration,4,1,4,Open,Low,2025-08-06
+R-1060,Sample risk 61,Operations,Data Protection,4,5,20,Closed,Medium,2025-08-30
+R-1061,Sample risk 62,Compliance,Data Protection,3,3,9,Accepted,Low,2025-07-19
+R-1062,Sample risk 63,Finance,Access Control,3,5,15,Open,High,2025-07-22
+R-1063,Sample risk 64,Operations,Data Protection,2,5,10,Open,High,2025-10-08
+R-1064,Sample risk 65,Compliance,Access Control,1,5,5,Open,High,2025-08-20
+R-1065,Sample risk 66,Finance,Business Continuity,3,3,9,Open,Medium,2025-08-15
+R-1066,Sample risk 67,IT,Business Continuity,2,5,10,Closed,High,2025-09-03
+R-1067,Sample risk 68,Finance,Configuration,3,3,9,Accepted,High,2025-04-23
+R-1068,Sample risk 69,Finance,Business Continuity,4,4,16,Open,Medium,2025-05-11
+R-1069,Sample risk 70,Finance,Configuration,4,2,8,Mitigated,High,2025-07-09
+R-1070,Sample risk 71,IT,Business Continuity,4,5,20,Accepted,Medium,2025-09-20
+R-1071,Sample risk 72,Compliance,Third-party,3,3,9,Closed,Low,2025-10-04
+R-1072,Sample risk 73,Security,Access Control,1,3,3,Open,Low,2025-07-28
+R-1073,Sample risk 74,Operations,Data Protection,4,4,16,Open,Medium,2025-06-09
+R-1074,Sample risk 75,Security,Access Control,3,3,9,Closed,Medium,2025-05-31
+R-1075,Sample risk 76,Compliance,Access Control,5,3,15,Open,Medium,2025-05-04
+R-1076,Sample risk 77,IT,Data Protection,1,2,2,Mitigated,Medium,2025-09-05
+R-1077,Sample risk 78,Security,Access Control,4,5,20,Open,Medium,2025-08-14
+R-1078,Sample risk 79,Security,Access Control,2,3,6,Mitigated,Low,2025-05-25
+R-1079,Sample risk 80,IT,Data Protection,2,3,6,Open,High,2025-09-18
+R-1080,Sample risk 81,Security,Configuration,2,2,4,Accepted,Medium,2025-04-24
+R-1081,Sample risk 82,Finance,Business Continuity,5,5,25,Open,Medium,2025-06-18
+R-1082,Sample risk 83,Compliance,Business Continuity,3,5,15,Accepted,Medium,2025-06-12
+R-1083,Sample risk 84,Security,Data Protection,4,4,16,Open,Medium,2025-06-08
+R-1084,Sample risk 85,Finance,Configuration,5,4,20,Mitigated,High,2025-09-26
+R-1085,Sample risk 86,Finance,Data Protection,4,3,12,Open,High,2025-04-18
+R-1086,Sample risk 87,Security,Access Control,2,4,8,Open,Low,2025-09-23
+R-1087,Sample risk 88,Security,Access Control,3,4,12,Closed,High,2025-06-10
+R-1088,Sample risk 89,Finance,Business Continuity,3,3,9,Mitigated,High,2025-07-26
+R-1089,Sample risk 90,Security,Third-party,2,1,2,Mitigated,Medium,2025-10-10
+R-1090,Sample risk 91,IT,Access Control,5,3,15,Open,Medium,2025-07-04
+R-1091,Sample risk 92,IT,Third-party,5,2,10,Accepted,Low,2025-06-22
+R-1092,Sample risk 93,Finance,Configuration,5,3,15,Mitigated,Medium,2025-08-03
+R-1093,Sample risk 94,Compliance,Access Control,2,2,4,Open,Medium,2025-07-19
+R-1094,Sample risk 95,Security,Business Continuity,3,4,12,Open,Low,2025-04-19
+R-1095,Sample risk 96,Finance,Data Protection,3,3,9,Mitigated,Medium,2025-05-30
+R-1096,Sample risk 97,Finance,Configuration,3,3,9,Open,High,2025-08-13
+R-1097,Sample risk 98,Compliance,Business Continuity,4,3,12,Open,High,2025-04-22
+R-1098,Sample risk 99,Security,Access Control,4,2,8,Open,Medium,2025-08-01
+R-1099,Sample risk 100,Compliance,Configuration,1,2,2,Closed,Medium,2025-05-02
+R-1100,Sample risk 101,IT,Business Continuity,3,3,9,Open,Medium,2025-05-01
+R-1101,Sample risk 102,Operations,Data Protection,2,3,6,Closed,Medium,2025-06-21
+R-1102,Sample risk 103,Security,Access Control,3,4,12,Mitigated,Medium,2025-04-22
+R-1103,Sample risk 104,Security,Data Protection,3,3,9,Open,High,2025-06-17
+R-1104,Sample risk 105,Finance,Business Continuity,3,3,9,Closed,Low,2025-05-05
+R-1105,Sample risk 106,Operations,Configuration,2,3,6,Open,High,2025-09-13
+R-1106,Sample risk 107,Compliance,Business Continuity,5,2,10,Closed,Low,2025-06-19
+R-1107,Sample risk 108,IT,Configuration,3,5,15,Closed,Medium,2025-08-28
+R-1108,Sample risk 109,Finance,Third-party,3,4,12,Open,Medium,2025-05-04
+R-1109,Sample risk 110,Security,Business Continuity,2,2,4,Mitigated,High,2025-06-30
+R-1110,Sample risk 111,Security,Third-party,3,2,6,Mitigated,Medium,2025-08-22
+R-1111,Sample risk 112,IT,Business Continuity,3,4,12,Open,Low,2025-09-04
+R-1112,Sample risk 113,IT,Business Continuity,3,3,9,Closed,High,2025-07-01
+R-1113,Sample risk 114,Security,Access Control,5,5,25,Open,High,2025-06-17
+R-1114,Sample risk 115,Compliance,Data Protection,3,4,12,Accepted,High,2025-05-19
+R-1115,Sample risk 116,Compliance,Third-party,2,4,8,Closed,Medium,2025-05-26
+R-1116,Sample risk 117,Compliance,Business Continuity,3,4,12,Open,Medium,2025-09-04
+R-1117,Sample risk 118,Security,Business Continuity,3,3,9,Closed,Medium,2025-10-10
+R-1118,Sample risk 119,Compliance,Third-party,3,3,9,Open,High,2025-09-18
+R-1119,Sample risk 120,Compliance,Access Control,3,4,12,Closed,High,2025-09-16
