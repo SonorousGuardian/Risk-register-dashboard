@@ -31,7 +31,7 @@ from openpyxl.drawing.image import Image as OpenpyxlImage
 # --- CONFIGURATION ---
 class Config:
     """Configuration constants for the dashboard"""
-    PAGE_TITLE = "Advanced GRC Dashboard"
+    PAGE_TITLE = " Risk Management Dashboard"
     PAGE_ICON = "🛡️"
     LAYOUT = "wide"
     
@@ -609,4 +609,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
