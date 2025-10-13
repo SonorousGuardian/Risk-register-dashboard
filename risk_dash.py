@@ -1,341 +1,452 @@
-# streamlit_grc_dashboard_final.py
+# live_grc_dashboard.py
 import streamlit as st
 import pandas as pd
 import numpy as np
-import plotly.express as px
 import plotly.graph_objects as go
+import plotly.express as px
+import plotly.io as pio
+from plotly.subplots import make_subplots
 import io
+import time
+import json
 from datetime import datetime, date
+from typing import Dict, Optional, Tuple
 
-# Import ReportLab for PDF Generation
+# Google Sheets integration
+import gspread
+from google.oauth2.service_account import Credentials
+
+# ReportLab for PDF generation
 from reportlab.lib.pagesizes import letter, landscape
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image as ReportLabImage, PageBreak
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib import colors
+from reportlab.lib.units import inch
 
-# --- PAGE CONFIGURATION ---
-st.set_page_config(
-    page_title="GRC Dashboard",
-    page_icon="🛡️",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+# Required for Excel image export
+from openpyxl.drawing.image import Image as OpenpyxlImage
 
-# --- HELPER & STYLING FUNCTIONS ---
 
-def apply_custom_styling():
-    """Applies custom CSS for KPI cards and general styling."""
-    st.markdown("""
-    <style>
-        .card {
-            background-color: #2a2a3e; border-radius: 10px; padding: 15px;
-            margin: 5px 0; box-shadow: 0 4px 8px 0 rgba(0,0,0,0.2); color: white;
-        }
-        .kpi-title { font-size: 14px; font-weight: bold; color: #a9a9b3; }
-        .kpi-value { font-size: 28px; font-weight: bold; color: #ffffff; }
-    </style>
-    """, unsafe_allow_html=True)
+# --- CONFIGURATION ---
+class Config:
+    """Configuration constants for the dashboard"""
+    PAGE_TITLE = "Advanced GRC Dashboard"
+    PAGE_ICON = "🛡️"
+    LAYOUT = "wide"
+    
+    RISK_OWNERS = ["IT", "Security", "Compliance", "Operations", "Finance", "HR", "Legal"]
+    RISK_CATEGORIES = ["Data Protection", "Third-party", "Configuration", "Access Control", "Business Continuity", "Cybersecurity"]
+    STATUS_OPTIONS = ["Open", "In Progress", "Mitigated", "Accepted", "Closed"]
+    CONTROL_EFFECTIVENESS_OPTIONS = ["Low", "Medium", "High"]
+    
+    COLORS = {'low_risk': '#2eb82e', 'medium_risk': '#ffa500', 'high_risk': '#ff4d4f', 'critical_risk': '#b22222'}
 
-def render_kpi_card(title, value):
-    """Renders a single KPI card."""
-    st.markdown(f'<div class="card"><div class="kpi-title">{title}</div><div class="kpi-value">{value}</div></div>', unsafe_allow_html=True)
+st.set_page_config(page_title=Config.PAGE_TITLE, page_icon=Config.PAGE_ICON, layout=Config.LAYOUT)
 
-@st.cache_data
-def read_data(uploaded_file):
-    """Reads data from uploaded CSV or Excel file."""
-    try:
-        if uploaded_file.name.endswith('.csv'):
-            return pd.read_csv(uploaded_file)
-        else:
-            return pd.read_excel(uploaded_file)
-    except Exception as e:
-        st.error(f"Error reading file: {e}")
-        return None
+# --- DATA MANAGER ---
+class DataManager:
+    @staticmethod
+    @st.cache_resource(ttl=3600)
+    def _get_gspread_client(creds_json: dict):
+        try:
+            scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+            creds = Credentials.from_service_account_info(creds_json, scopes=scopes)
+            return gspread.authorize(creds)
+        except Exception as e:
+            st.error(f"Failed to authenticate with Google Sheets: {e}")
+            return None
 
-def coerce_numeric(df, cols):
-    """Converts specified columns to numeric, coercing errors."""
-    for c in cols:
-        if c in df.columns:
-            df[c] = pd.to_numeric(df[c], errors='coerce')
-    return df
+    @st.cache_data(ttl=30)
+    def read_live_data(_self, creds_json: dict, sheet_url: str) -> pd.DataFrame:
+        gc = _self._get_gspread_client(creds_json)
+        if not gc: return pd.DataFrame()
+        try:
+            spreadsheet = gc.open_by_url(sheet_url)
+            worksheet = spreadsheet.sheet1
+            records = worksheet.get_all_records()
+            return pd.DataFrame(records) if records else pd.DataFrame()
+        except gspread.exceptions.SpreadsheetNotFound:
+            st.error("Spreadsheet not found. Check the URL and sharing settings.")
+            return pd.DataFrame()
+        except Exception as e:
+            st.error(f"Error reading live data: {e}")
+            return pd.DataFrame()
 
-def create_risk_matrix(df):
-    """Creates an advanced risk matrix showing counts in each box."""
-    if df.empty or 'Impact' not in df.columns or 'Likelihood' not in df.columns:
-        fig = go.Figure()
-        fig.update_layout(title='<b>Risk Matrix (Risk Counts)</b>', template='plotly_dark',
-                          xaxis=dict(title='Impact', visible=False), yaxis=dict(title='Likelihood', visible=False))
-        fig.add_annotation(text="No data to display", xref="paper", yref="paper", showarrow=False, font=dict(size=20))
+    def update_live_data(_self, creds_json: dict, sheet_url: str, risk_ids: list, new_status: str):
+        gc = _self._get_gspread_client(creds_json)
+        if not gc: return
+        try:
+            spreadsheet = gc.open_by_url(sheet_url)
+            worksheet = spreadsheet.sheet1
+            headers = worksheet.row_values(1)
+            risk_id_col = headers.index('Risk ID') + 1
+            status_col = headers.index('Status') + 1
+            last_updated_col = headers.index('Last Updated') + 1
+            cell_list = worksheet.findall(rf'({"|".join(risk_ids)})', in_column=risk_id_col)
+            for cell in cell_list:
+                worksheet.update_cell(cell.row, status_col, new_status)
+                worksheet.update_cell(cell.row, last_updated_col, date.today().strftime('%Y-%m-%d'))
+            st.cache_data.clear()
+        except (ValueError, gspread.exceptions.APIError) as e:
+            st.error(f"Failed to update sheet: {e}")
+
+    def upload_df_to_gsheet(_self, creds_json: dict, sheet_url: str, df: pd.DataFrame):
+        gc = _self._get_gspread_client(creds_json)
+        if not gc: return False
+        try:
+            spreadsheet = gc.open_by_url(sheet_url)
+            worksheet = spreadsheet.sheet1
+            headers = worksheet.row_values(1)
+            upload_cols = [col for col in df.columns if col in headers]
+            df_to_upload = df[upload_cols].copy()
+            rows_to_append = df_to_upload.astype(str).values.tolist()
+            worksheet.append_rows(rows_to_append, value_input_option='USER_ENTERED')
+            st.cache_data.clear()
+            return True
+        except Exception as e:
+            st.error(f"Failed to upload data to Google Sheet: {e}"); return False
+
+    @staticmethod
+    def read_from_file(uploaded_file) -> pd.DataFrame:
+        try:
+            return pd.read_csv(uploaded_file) if uploaded_file.name.lower().endswith('.csv') else pd.read_excel(uploaded_file)
+        except Exception as e:
+            st.error(f"Error reading file: {e}"); return pd.DataFrame()
+
+    def preprocess_data(self, df: pd.DataFrame) -> pd.DataFrame:
+        if df.empty: return df
+        df_clean = df.copy()
+        for col in ['Likelihood', 'Impact']: df_clean[col] = pd.to_numeric(df_clean[col], errors='coerce').fillna(1).astype(int)
+        df_clean['Risk Score'] = df_clean['Likelihood'] * df_clean['Impact']
+        df_clean['Last Updated'] = pd.to_datetime(df_clean.get('Last Updated'), errors='coerce').dt.date
+        for col, default in [('Status', 'Open'), ('Risk Owner', 'Unknown'), ('Control Effectiveness', 'Medium')]:
+             if col not in df_clean.columns: df_clean[col] = default
+             else: df_clean[col] = df_clean[col].fillna(default)
+        return df_clean
+
+    def filter_data(self, df: pd.DataFrame, filters: Dict) -> pd.DataFrame:
+        if df.empty: return df
+        query_parts, params = [], {}
+        if filters.get('owner') != 'All': query_parts.append("`Risk Owner` == @owner"); params['owner'] = filters['owner']
+        if filters.get('status') != 'All': query_parts.append("`Status` == @status"); params['status'] = filters['status']
+        if filters.get('control') != 'All': query_parts.append("`Control Effectiveness` == @control"); params['control'] = filters['control']
+        score_range = filters.get('score_range', (0, 25)); query_parts.append("`Risk Score` >= @score_min and `Risk Score` <= @score_max"); params.update({'score_min': score_range[0], 'score_max': score_range[1]})
+        if not query_parts: return df
+        return df.query(" and ".join(query_parts), local_dict=params, engine='python')
+
+# --- VISUALIZATION & UI MANAGERS ---
+class VisualizationManager:
+    @staticmethod
+    def create_risk_matrix(df: pd.DataFrame) -> go.Figure:
+        if df.empty: return go.Figure().update_layout(title='Risk Matrix (No data)', template='plotly_dark')
+        count_matrix = pd.pivot_table(df, index='Impact', columns='Likelihood', aggfunc='size', fill_value=0).reindex(index=range(1, 6), columns=range(1, 6), fill_value=0)
+        risk_level_matrix = np.fromfunction(lambda i, j: (i + 1) * (j + 1), (5, 5), dtype=int)
+        colorscale = [[0.0, '#2E7D32'], [0.25, '#FFEB3B'], [0.75, '#FF9800'], [1.0, '#B71C1C']]
+        fig = go.Figure(data=go.Heatmap(z=risk_level_matrix, x=count_matrix.columns, y=count_matrix.index, colorscale=colorscale, hovertemplate="<b>Likelihood:</b> %{x}<br><b>Impact:</b> %{y}<br><b>Risk Level:</b> %{z}<br><b>Risks:</b> %{customdata}<extra></extra>", customdata=count_matrix.values, colorbar=dict(title="Level")))
+        annotations = [dict(x=j, y=i, text=f"<b>{count_matrix.loc[i, j]}</b>", showarrow=False, font=dict(color="white" if (i * j) >= 10 else "black", size=18)) for i in count_matrix.index for j in count_matrix.columns]
+        fig.update_layout(template='plotly_dark', title=dict(text="<b>Risk Heatmap</b> (Count of Risks)", x=0.5, font_size=20), xaxis=dict(title='<b>Likelihood</b>', side="bottom"), yaxis=dict(title='<b>Impact</b>'), height=600, annotations=annotations, margin=dict(l=40, r=40, t=80, b=40))
         return fig
 
-    agg_df = df.groupby(['Impact', 'Likelihood']).size().reset_index(name='count')
-    text_matrix = [[0] * 5 for _ in range(5)]
-    for index, row in agg_df.iterrows():
-        try:
-            impact_idx = int(row['Impact']) - 1
-            likelihood_idx = int(row['Likelihood']) - 1
-            if 0 <= impact_idx < 5 and 0 <= likelihood_idx < 5:
-                text_matrix[likelihood_idx][impact_idx] = row['count']
-        except (ValueError, TypeError):
-            continue
+    @staticmethod
+    def create_distribution_charts(df: pd.DataFrame) -> go.Figure:
+        if df.empty: return go.Figure().update_layout(title='No data for distribution', template='plotly_dark')
+        fig = make_subplots(
+            rows=1, cols=3,
+            subplot_titles=("By Risk Owner", "By Category", "By Status")
+        )
+        for i, col in enumerate(['Risk Owner', 'Risk Category', 'Status']):
+            counts = df[col].value_counts()
+            fig.add_trace(go.Bar(x=counts.index, y=counts.values, name=col), row=1, col=i+1)
+        
+        fig.update_layout(title_text="Risk Distribution", showlegend=False, template='plotly_dark', height=400)
+        return fig
 
-    heatmap_z = [[1, 1, 2, 3, 3], [1, 2, 2, 3, 4], [2, 2, 3, 4, 4], [2, 3, 3, 4, 5], [3, 3, 4, 5, 5]]
-    colorscale = [[0, 'rgb(12,128,64)'], [0.25, 'rgb(12,128,64)'], [0.25, 'rgb(255,255,0)'], [0.5, 'rgb(255,255,0)'],
-                  [0.5, 'rgb(255,165,0)'], [0.75, 'rgb(255,165,0)'], [0.75, 'rgb(255,0,0)'], [1, 'rgb(255,0,0)']]
-    heatmap_z_display = heatmap_z[::-1]
-    text_matrix_display = text_matrix[::-1]
-    fig = go.Figure(data=go.Heatmap(
-        z=heatmap_z_display, x=[1, 2, 3, 4, 5], y=[1, 2, 3, 4, 5],
-        colorscale=colorscale, showscale=False, text=text_matrix_display,
-        texttemplate="%{text}", textfont={"size": 16, "color": "black"}
-    ))
-    fig.update_layout(
-        title='<b>Risk Matrix (Risk Counts)</b>', template='plotly_dark', showlegend=False,
-        xaxis=dict(tickmode='array', tickvals=[1, 2, 3, 4, 5], ticktext=['1-Low', '2-Minor', '3-Moderate', '4-Major', '5-Severe'], range=[0.5, 5.5], title='Impact'),
-        yaxis=dict(tickmode='array', tickvals=[1, 2, 3, 4, 5], ticktext=['1-Rare', '2-Unlikely', '3-Possible', '4-Likely', '5-Almost Certain'], range=[0.5, 5.5], title='Likelihood'),
-    )
-    return fig
+    @staticmethod
+    def create_control_effectiveness_chart(df: pd.DataFrame) -> go.Figure:
+        if df.empty or 'Control Effectiveness' not in df.columns:
+            return go.Figure().update_layout(title='No data for control analysis', template='plotly_dark')
+        
+        fig = px.box(df, x='Control Effectiveness', y='Risk Score', 
+                     title='Risk Score by Control Effectiveness',
+                     color='Control Effectiveness',
+                     color_discrete_map={
+                         'Low': Config.COLORS['high_risk'],
+                         'Medium': Config.COLORS['medium_risk'],
+                         'High': Config.COLORS['low_risk']
+                     },
+                     category_orders={"Control Effectiveness": ["Low", "Medium", "High"]})
+        fig.update_layout(template='plotly_dark', height=400)
+        return fig
 
-def generate_pdf_report(df):
-    """Generates a PDF report from a DataFrame."""
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=landscape(letter))
-    elements = []
-    styles = getSampleStyleSheet()
-    title = Paragraph("GRC Risk Report", styles['h1'])
-    report_date = Paragraph(f"Generated on: {date.today().strftime('%Y-%m-%d')}", styles['Normal'])
-    elements.extend([title, report_date, Spacer(1, 24)])
+class UIComponents:
+    @staticmethod
+    def apply_custom_styling():
+        st.markdown("""<style>
+            body { background-color: #0E1117; } .stApp { background-color: #0E1117; }
+            .card { background: #161B22; border-radius: 10px; padding: 20px; margin: 10px 0; color: white; border-left: 5px solid; box-shadow: 0 4px 8px 0 rgba(0,0,0,0.2); }
+            .kpi-title { font-size: 16px; color: #e0e0e0; margin-bottom: 8px; font-weight: 500; }
+            .kpi-value { font-size: 32px; font-weight: 700; margin: 0; }
+            .risk-high { border-left-color: #ff4d4f; } .risk-medium { border-left-color: #ffa500; } .risk-low { border-left-color: #2eb82e; } .risk-critical { border-left-color: #b22222; }
+            .stTabs [data-baseweb="tab-list"] { gap: 24px; } .stTabs [data-baseweb="tab"] { height: 50px; background-color: transparent; }
+            .stTabs [aria-selected="true"] { background-color: #161B22; border-radius: 8px 8px 0 0; }
+        </style>""", unsafe_allow_html=True)
+    
+    @staticmethod
+    def render_kpi_card(title: str, value, risk_level: str = "low", icon: str = ""):
+        st.markdown(f'<div class="card risk-{risk_level}"><div class="kpi-title">{icon} {title}</div><div class="kpi-value">{value}</div></div>', unsafe_allow_html=True)
+    
+    @staticmethod
+    def get_risk_level(score: float) -> Tuple[str, str]:
+        if score >= 20: return "critical", Config.COLORS['critical_risk']
+        elif score >= 15: return "high", Config.COLORS['high_risk']
+        elif score >= 8: return "medium", Config.COLORS['medium_risk']
+        else: return "low", Config.COLORS['low_risk']
 
-    if not df.empty:
-        kpi_text = f"""
-        <b>Total Filtered Risks:</b> {len(df)} | 
-        <b>Open Risks:</b> {int((df['Status'] == 'Open').sum())} | 
-        <b>Avg. Likelihood:</b> {df['Likelihood'].mean():.2f} | 
-        <b>Avg. Impact:</b> {df['Impact'].mean():.2f}
-        """
-        kpi_paragraph = Paragraph(kpi_text, styles['Normal'])
-        elements.extend([kpi_paragraph, Spacer(1, 24)])
-        report_df = df[['Risk ID', 'Title', 'Risk Owner', 'Risk Category', 'Likelihood', 'Impact', 'Risk Score', 'Status']].copy()
-        report_df.rename(columns={'Risk Category': 'Category', 'Risk Score': 'Score'}, inplace=True)
-        data = [report_df.columns.to_list()] + report_df.values.tolist()
+# --- IMPROVED REPORT MANAGER ---
+class ReportManager:
+    class GRCReportTemplate(SimpleDocTemplate):
+        def __init__(self, filename, **kw):
+            super().__init__(filename, **kw)
+            self.pagesize = landscape(letter)
+
+        def afterPage(self):
+            canvas = self.canv
+            canvas.saveState()
+            canvas.setFont('Helvetica', 9)
+            canvas.drawString(inch, 0.75 * inch, f"Page {self.page} | GRC Risk Report")
+            canvas.drawRightString(self.width + self.leftMargin - inch, 0.75 * inch, f"Generated: {datetime.now():%Y-%m-%d}")
+            canvas.restoreState()
+
+    @staticmethod
+    def generate_excel_report(df: pd.DataFrame, risk_matrix_fig: go.Figure, filters: Dict, session_mitigated_df: pd.DataFrame) -> bytes:
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            report_info_df = pd.DataFrame({"Filter": list(filters.keys()), "Value": [str(v) for v in filters.values()]})
+            report_info_df.to_excel(writer, index=False, sheet_name='Report_Info')
+            df.to_excel(writer, index=False, sheet_name='Filtered_Risks')
+            
+            mitigated_df = df[df['Status'] == 'Mitigated'].sort_values('Risk Score', ascending=False)
+            if not mitigated_df.empty:
+                mitigated_df.to_excel(writer, index=False, sheet_name='All_Mitigated_Risks')
+            
+            if not session_mitigated_df.empty:
+                session_mitigated_df.to_excel(writer, index=False, sheet_name='Mitigated_This_Session')
+
+            img_bytes = pio.to_image(risk_matrix_fig, format="png", width=800, height=600, scale=2)
+            matrix_ws = writer.book.create_sheet("Risk_Matrix")
+            matrix_ws.add_image(OpenpyxlImage(io.BytesIO(img_bytes)), 'A1')
+
+            for sheet_name in writer.sheets:
+                ws = writer.sheets[sheet_name]
+                for col in ws.columns:
+                    ws.column_dimensions[col[0].column_letter].width = max(len(str(cell.value)) for cell in col) + 2
+        return output.getvalue()
+
+    @staticmethod
+    def generate_pdf_report(df: pd.DataFrame, risk_matrix_fig: go.Figure, filters: Dict, session_mitigated_df: pd.DataFrame) -> bytes:
+        buffer = io.BytesIO()
+        doc = ReportManager.GRCReportTemplate(buffer, pagesize=landscape(letter))
+        styles = getSampleStyleSheet()
+        elements = [Paragraph("GRC Risk Management Report", styles['Title']), Spacer(1, 12)]
+        
+        elements.append(Paragraph("<b>Active Filters</b>", styles['Heading2']))
+        elements.append(Paragraph("<br/>".join([f"<b>{k.title()}:</b> {v}" for k,v in filters.items()]), styles['Normal']))
+        elements.append(PageBreak())
+        
+        elements.append(Paragraph("<b>Risk Assessment Matrix</b>", styles['Heading2']))
+        img_bytes = pio.to_image(risk_matrix_fig, format="png", width=700, height=525)
+        elements.append(ReportLabImage(io.BytesIO(img_bytes)))
+        elements.append(Spacer(1, 24))
+
         table_style = TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.grey), ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'), ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 12), ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#4F81BD")),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor("#DCE6F1")),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.HexColor("#DCE6F1"), colors.white])
         ])
-        table = Table(data, hAlign='LEFT')
-        table.setStyle(table_style)
-        elements.append(table)
-    else:
-        elements.append(Paragraph("No data available for the selected filters.", styles['Normal']))
+        
+        report_cols = ['Risk ID', 'Title', 'Risk Owner', 'Risk Score', 'Status']
 
-    doc.build(elements)
-    buffer.seek(0)
-    return buffer
+        if not session_mitigated_df.empty:
+            elements.append(Paragraph("<b>Risks Mitigated This Session</b>", styles['Heading2']))
+            data = [report_cols] + session_mitigated_df[report_cols].values.tolist()
+            table = Table(data, colWidths=[inch, 4*inch, 1.5*inch, inch, inch])
+            table.setStyle(table_style)
+            elements.append(table)
+            elements.append(Spacer(1, 24))
 
-@st.cache_data
-def to_excel(df):
-    """Converts a DataFrame to an in-memory Excel file."""
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df.to_excel(writer, index=False, sheet_name='Filtered Risks')
-    return output.getvalue()
+        mitigated_df = df[df['Status'] == 'Mitigated'].sort_values('Risk Score', ascending=False)
+        if not mitigated_df.empty:
+            elements.append(Paragraph("<b>All Mitigated Risks (in current view)</b>", styles['Heading2']))
+            data = [report_cols] + mitigated_df[report_cols].values.tolist()
+            table = Table(data, colWidths=[inch, 4*inch, 1.5*inch, inch, inch])
+            table.setStyle(table_style)
+            elements.append(table)
+            elements.append(Spacer(1, 24))
+            
+        non_mitigated_df = df[~df['Status'].isin(['Mitigated', 'Closed', 'Accepted'])].sort_values('Risk Score', ascending=False)
+        if not non_mitigated_df.empty:
+            elements.append(Paragraph("<b>Active (Non-Mitigated) Risks</b>", styles['Heading2']))
+            data = [report_cols] + non_mitigated_df[report_cols].values.tolist()
+            table = Table(data, colWidths=[inch, 4*inch, 1.5*inch, inch, inch])
+            table.setStyle(table_style)
+            elements.append(table)
 
-# --- MAIN APP LOGIC ---
+        doc.build(elements)
+        return buffer.getvalue()
+
+
+# --- MAIN APPLICATION ---
 def main():
-    apply_custom_styling()
-    st.sidebar.header("Upload Your Data")
-    uploaded = st.sidebar.file_uploader("Upload risks CSV/Excel", type=["csv", "xlsx", "xls"])
+    st.title(f"{Config.PAGE_ICON} {Config.PAGE_TITLE}")
+    UIComponents.apply_custom_styling()
+    data_manager = DataManager()
+    
+    if 'last_filters' not in st.session_state: st.session_state.last_filters = {}
+    if 'df' not in st.session_state: st.session_state.df = pd.DataFrame()
+    if 'initial_mitigated_ids' not in st.session_state: st.session_state.initial_mitigated_ids = set()
 
-    # Initialize session state for the dataframe if it doesn't exist
-    if 'df' not in st.session_state:
-        st.session_state.df = pd.DataFrame()
+    with st.sidebar:
+        with st.expander("🔄 **Data Source**", expanded=True):
+            data_source = st.radio("Choose source:", ("File Upload", "Google Sheets (Live)"), key="data_source", horizontal=True)
+            if data_source == "Google Sheets (Live)":
+                st.session_state.gsheet_url = st.text_input("Google Sheet URL", st.session_state.get('gsheet_url', ''))
+                st.session_state.gsheet_creds_file = st.file_uploader("Upload Credentials JSON", type=['json'])
+            else:
+                uploaded_file = st.file_uploader("Upload Risk Register", type=['csv', 'xlsx', 'xls'])
 
-    if uploaded:
-        st.session_state.df = read_data(uploaded)
-        # Clear download states when a new file is uploaded
-        st.session_state.excel_data = None
-        st.session_state.pdf_data = None
+    df_loaded = False
+    creds_info = None
+    if data_source == "Google Sheets (Live)":
+        if st.session_state.gsheet_creds_file:
+            creds_info = json.load(st.session_state.gsheet_creds_file)
+        
+        if st.session_state.gsheet_url and creds_info:
+            st.session_state.is_live = True
+            raw_df = data_manager.read_live_data(creds_info, st.session_state.gsheet_url)
+            if not raw_df.empty: 
+                if 'df' not in st.session_state or not raw_df.equals(st.session_state.get('raw_df')):
+                    st.session_state.raw_df = raw_df
+                    st.session_state.df = data_manager.preprocess_data(raw_df)
+                    st.session_state.initial_mitigated_ids = set(st.session_state.df[st.session_state.df['Status'] == 'Mitigated']['Risk ID'])
+                df_loaded = True
+    elif 'uploaded_file' in locals() and uploaded_file:
+        st.session_state.is_live = False
+        raw_df = data_manager.read_from_file(uploaded_file)
+        if 'df' not in st.session_state or not raw_df.equals(st.session_state.get('raw_df')):
+             st.session_state.raw_df = raw_df
+             st.session_state.df = data_manager.preprocess_data(raw_df)
+             st.session_state.initial_mitigated_ids = set(st.session_state.df[st.session_state.df['Status'] == 'Mitigated']['Risk ID'])
+        df_loaded = True
 
+    if not df_loaded:
+        st.info("👋 **Welcome!** Please configure a data source in the sidebar to begin."); return
 
     df = st.session_state.df
 
-    with st.sidebar.expander("Register a New Risk"):
-        with st.form("new_risk_form", clear_on_submit=True):
-            st.write("Enter the details for the new risk:")
-            title = st.text_input("Risk Title")
-            owner = st.selectbox("Risk Owner (Form)", options=["IT", "Security", "Compliance", "Operations", "Finance"], key="form_owner")
-            category = st.selectbox("Risk Category (Form)", options=["Data Protection", "Third-party", "Configuration", "Access Control", "Business Continuity"], key="form_category")
-            likelihood = st.slider("Likelihood", 1, 5, 3, key="form_likelihood")
-            impact = st.slider("Impact", 1, 5, 3, key="form_impact")
-            status = st.selectbox("Status (Form)", options=["Open", "Mitigated", "Accepted", "Closed"], key="form_status")
-            submitted = st.form_submit_button("Add Risk")
-            
-            if submitted and title:
-                new_risk_id = f"R-{len(df) + 1001}"
-                risk_score = likelihood * impact
-                new_risk = pd.DataFrame([{"Risk ID": new_risk_id, "Title": title, "Risk Owner": owner,
-                                          "Risk Category": category, "Likelihood": likelihood, "Impact": impact,
-                                          "Risk Score": risk_score, "Status": status, "Control Effectiveness": "Medium",
-                                          "Last Updated": date.today()}])
-                st.session_state.df = pd.concat([st.session_state.df, new_risk], ignore_index=True)
-                st.success(f"Risk '{title}' registered successfully!")
-
-    st.sidebar.markdown("---")
-    st.sidebar.header("Filters")
-    
-    if df.empty:
-        st.info("👋 Welcome! Please upload a risk register file or register a new risk.")
-        expected_columns = ["Risk ID", "Title", "Risk Owner", "Risk Category", "Likelihood", "Impact", 
-                            "Risk Score", "Status", "Control Effectiveness", "Last Updated"]
-        df = pd.DataFrame(columns=expected_columns)
-        st.session_state.df = df
-    
-    if not df.empty:
-        df = coerce_numeric(df, ['Likelihood', 'Impact'])
-        if 'Risk Score' not in df.columns or df['Risk Score'].isna().all():
-            if 'Likelihood' in df.columns and 'Impact' in df.columns:
-                df['Risk Score'] = (df['Likelihood'].fillna(0) * df['Impact'].fillna(0))
-            else:
-                df['Risk Score'] = 0
+    total_risks = len(df); mitigated_risks = len(df[df['Status'] == 'Mitigated'])
+    avg_score = df['Risk Score'].mean(); critical_risks = len(df[df['Risk Score'] >= 20])
+    level, _ = UIComponents.get_risk_level(avg_score)
+    c1, c2, c3, c4 = st.columns(4)
+    with c1: UIComponents.render_kpi_card("Total Risks", total_risks, level, "🗂️")
+    with c2: UIComponents.render_kpi_card("Mitigated Risks", mitigated_risks, "low", "✅")
+    with c3: UIComponents.render_kpi_card("Avg. Score", f"{avg_score:.1f}", level, "📈")
+    with c4: UIComponents.render_kpi_card("Critical Risks (≥20)", critical_risks, "critical" if critical_risks > 0 else "low", "🚨")
+    st.markdown("---")
 
     with st.sidebar:
-        if not df.empty:
-            owners = ['All'] + sorted(df['Risk Owner'].dropna().unique().tolist())
-            categories = ['All'] + sorted(df['Risk Category'].dropna().unique().tolist())
-            statuses = ['All'] + sorted(df['Status'].dropna().unique().tolist())
-            owner_sel = st.selectbox("Risk Owner", owners)
-            cat_sel = st.selectbox("Risk Category", categories)
-            status_sel = st.selectbox("Status", statuses)
-            
-            df['Last Updated'] = pd.to_datetime(df['Last Updated'], errors='coerce').dt.date
-            min_date, max_date = df['Last Updated'].min(), df['Last Updated'].max()
-            date_range = st.date_input("Last Updated range", value=(min_date, max_date), min_value=min_date, max_value=max_date)
-            
+        with st.expander("🔍 **Filters**", expanded=True):
+            owners = ['All'] + sorted(df['Risk Owner'].dropna().unique())
+            statuses = ['All'] + sorted(df['Status'].dropna().unique())
+            controls = ['All'] + sorted(df['Control Effectiveness'].dropna().unique())
+            owner_sel = st.selectbox("Owner", owners); status_sel = st.selectbox("Status", statuses)
+            control_sel = st.selectbox("Control Effectiveness", controls)
             score_min, score_max = int(df['Risk Score'].min()), int(df['Risk Score'].max())
-            score_sel = st.slider("Risk Score range", score_min, score_max, (score_min, score_max))
-        else:
-            owner_sel, cat_sel, status_sel, date_range, score_sel = "All", "All", "All", (date.today(), date.today()), (0, 25)
-            st.selectbox("Risk Owner", ["All"], disabled=True)
-            st.selectbox("Risk Category", ["All"], disabled=True)
-            st.selectbox("Status", ["All"], disabled=True)
-            st.date_input("Last Updated range", date_range, disabled=True)
-            st.slider("Risk Score range", 0, 25, score_sel, disabled=True)
-
-    filtered = df.copy()
-    if not df.empty:
-        if owner_sel != 'All': filtered = filtered[filtered['Risk Owner'] == owner_sel]
-        if cat_sel != 'All': filtered = filtered[filtered['Risk Category'] == cat_sel]
-        if status_sel != 'All': filtered = filtered[filtered['Status'] == status_sel]
-        if len(date_range) == 2:
-            filtered = filtered[(filtered['Last Updated'] >= date_range[0]) & (filtered['Last Updated'] <= date_range[1])]
-        filtered = filtered[(filtered['Risk Score'] >= score_sel[0]) & (filtered['Risk Score'] <= score_sel[1])]
-
-    st.title("📊 GRC Dashboard")
-    
-    st.markdown("### Key Metrics")
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        render_kpi_card("Total Filtered Risks", len(filtered))
-    with col2:
-        render_kpi_card("Open Risks", int((filtered['Status'] == 'Open').sum()) if not filtered.empty else 0)
-    with col3:
-        render_kpi_card("Avg. Likelihood", f"{filtered['Likelihood'].mean():.2f}" if not filtered.empty else "0.00")
-    with col4:
-        render_kpi_card("Avg. Impact", f"{filtered['Impact'].mean():.2f}" if not filtered.empty else "0.00")
+            score_sel = st.slider("Score Range", score_min, score_max, (score_min, score_max))
         
-    st.markdown("---")
+        current_filters = {'owner': owner_sel, 'status': status_sel, 'control': control_sel, 'score_range': score_sel}
+        if st.session_state.last_filters != current_filters:
+            if 'excel_report' in st.session_state: del st.session_state.excel_report
+            if 'pdf_report' in st.session_state: del st.session_state.pdf_report
+        st.session_state.last_filters = current_filters
+        filtered_df = data_manager.filter_data(df, current_filters)
 
-    st.markdown("### Visual Analysis")
-    st.plotly_chart(create_risk_matrix(filtered), use_container_width=True)
+        if not st.session_state.get('is_live', True):
+            with st.expander("📤 **Export / Upload**"):
+                st.download_button("Download Updated CSV", data=df.to_csv(index=False).encode('utf-8'), file_name=f"updated_risks.csv", use_container_width=True)
+                if st.button("Upload Session Data to Google Sheet", use_container_width=True, type="primary"):
+                    if 'gsheet_creds_file' in st.session_state and st.session_state.gsheet_creds_file and 'gsheet_url' in st.session_state and st.session_state.gsheet_url:
+                        creds_info_for_upload = json.load(st.session_state.gsheet_creds_file)
+                        if data_manager.upload_df_to_gsheet(creds_info_for_upload, st.session_state.gsheet_url, df):
+                           st.success("Successfully uploaded data!")
+                    else: st.warning("Please configure Google Sheets connection first to upload.")
 
-    vis_col1, vis_col2 = st.columns(2)
-    with vis_col1:
-        st.markdown("##### Top Risk Categories")
-        if not filtered.empty:
-            fig_treemap = px.treemap(filtered, path=[px.Constant("All"), 'Risk Category'], values='Risk Score')
-            fig_treemap.update_layout(template="plotly_dark", margin=dict(t=30, l=10, r=10, b=10))
-            st.plotly_chart(fig_treemap, use_container_width=True)
-    with vis_col2:
-        st.markdown("##### Status Distribution")
-        if not filtered.empty:
-            status_counts = filtered['Status'].value_counts()
-            fig_pie = px.pie(status_counts, names=status_counts.index, values=status_counts.values, hole=0.4)
-            fig_pie.update_layout(template="plotly_dark")
-            st.plotly_chart(fig_pie, use_container_width=True)
+    tab1, tab2, tab3, tab4 = st.tabs(["📋 **Register**", "📊 **Analytics**", "✅ **Checklist**", "📄 **Reports**"])
+
+    with tab1: st.dataframe(filtered_df, use_container_width=True, height=500)
+
+    with tab2:
+        st.header("Risk Analytics Dashboard")
+        st.plotly_chart(VisualizationManager.create_risk_matrix(filtered_df), use_container_width=True)
+        st.plotly_chart(VisualizationManager.create_distribution_charts(filtered_df), use_container_width=True)
+        st.plotly_chart(VisualizationManager.create_control_effectiveness_chart(filtered_df), use_container_width=True)
+
+    with tab3:
+        st.header("🔄 Risk Mitigation Checklist")
+        active_risks_in_filter = filtered_df[~filtered_df['Status'].isin(['Mitigated', 'Closed'])].copy()
         
-    st.markdown("---")
-
-    st.markdown("### Detailed Risk Register & Reports")
-    if not filtered.empty:
-        # --- DOWNLOAD LOGIC FULLY REVISED ---
-        col_dl1, col_dl2 = st.columns(2)
-        with col_dl1:
-            if st.button("📥 Export to Excel", use_container_width=True):
-                # Prepare data and store in session state
-                st.session_state.excel_data = to_excel(filtered)
-                st.session_state.pdf_data = None # Clear other download state
-        with col_dl2:
-            if st.button("📄 Download PDF Report", use_container_width=True):
-                # Prepare data and store in session state
-                st.session_state.pdf_data = generate_pdf_report(filtered)
-                st.session_state.excel_data = None # Clear other download state
-
-        # Trigger download if data is available in session state
-        if 'excel_data' in st.session_state and st.session_state.excel_data:
-            st.download_button(
-                label="Click to Finalize Excel Download", data=st.session_state.excel_data,
-                file_name="filtered_risk_register.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key='excel_download_trigger'
-            )
-            # Clear state after triggering download
-            st.session_state.excel_data = None
-
-        if 'pdf_data' in st.session_state and st.session_state.pdf_data:
-            st.download_button(
-                label="Click to Finalize PDF Download", data=st.session_state.pdf_data,
-                file_name="grc_report.pdf",
-                mime="application/pdf",
-                key='pdf_download_trigger'
-            )
-            # Clear state after triggering download
-            st.session_state.pdf_data = None
+        total_mitigatable = len(df[~df['Status'].isin(['Closed', 'Accepted'])])
+        already_mitigated_total = len(df[df['Status'] == 'Mitigated'])
+        
+        if not active_risks_in_filter.empty:
+            active_risks_in_filter.insert(0, 'Mitigate', False)
+            edited_df = st.data_editor(active_risks_in_filter[['Mitigate', 'Risk ID', 'Title', 'Risk Score', 'Status']], use_container_width=True, hide_index=True, key="checklist_editor", column_config={'Mitigate': st.column_config.CheckboxColumn("Select"), 'Risk Score': st.column_config.ProgressColumn("Score", min_value=1, max_value=25, format="%d")})
             
-        st.dataframe(filtered.sort_values('Risk Score', ascending=False))
+            newly_selected_count = edited_df['Mitigate'].sum()
+            progress_value = (already_mitigated_total + newly_selected_count) / total_mitigatable if total_mitigatable > 0 else 0
+            st.progress(progress_value, text=f"Overall Mitigation Progress ({progress_value:.0%})")
+            
+            s1, s2, s3 = st.columns(3)
+            s1.metric("Active Risks in View", len(active_risks_in_filter)); s2.metric("Selected for Mitigation", newly_selected_count); s3.metric("High/Critical in View", len(active_risks_in_filter[active_risks_in_filter['Risk Score'] >= 15]))
+            
+            selected_ids = edited_df[edited_df['Mitigate']]['Risk ID'].tolist()
+            if st.button(f"🚀 Update {len(selected_ids)} Risks to Mitigated", disabled=not selected_ids, type="primary"):
+                if st.session_state.is_live:
+                    data_manager.update_live_data(creds_info, st.session_state.gsheet_url, selected_ids, 'Mitigated')
+                else:
+                    st.session_state.df.loc[st.session_state.df['Risk ID'].isin(selected_ids), 'Status'] = 'Mitigated'
+                st.success("Risks updated!"); time.sleep(1); st.rerun()
+        else: st.success("🎉 No active risks in the current filter!")
+            
+    with tab4:
+        st.header("📄 Reports & Exports")
+        if not filtered_df.empty:
+            current_mitigated_ids = set(df[df['Status'] == 'Mitigated']['Risk ID'])
+            session_mitigated_ids = current_mitigated_ids - st.session_state.initial_mitigated_ids
+            session_mitigated_df = df[df['Risk ID'].isin(session_mitigated_ids)][['Risk ID', 'Title', 'Risk Owner', 'Risk Score', 'Status']]
 
-    st.markdown("---")
+            risk_matrix_fig = VisualizationManager.create_risk_matrix(filtered_df)
+            c1, c2 = st.columns(2)
+            
+            with c1:
+                if st.button("Generate Excel Report", use_container_width=True):
+                    with st.spinner("Creating Excel file..."):
+                        st.session_state.excel_report = ReportManager.generate_excel_report(filtered_df, risk_matrix_fig, current_filters, session_mitigated_df)
+                if 'excel_report' in st.session_state:
+                    st.download_button("Download Excel", st.session_state.excel_report, "GRC_Report.xlsx", use_container_width=True)
 
-    st.markdown("### Non-Mitigated Risks")
-    non_mitigated_risks = filtered[~filtered['Status'].isin(['Mitigated', 'Closed'])].copy()
-
-    if not non_mitigated_risks.empty:
-        st.write("The following risks require attention. Check 'Reviewed' and click the button below to update their status to 'Mitigated'.")
-        non_mitigated_risks.insert(0, 'Reviewed', False)
-        display_columns = ['Reviewed', 'Risk ID', 'Title', 'Risk Owner', 'Impact', 'Likelihood', 'Risk Score', 'Status']
-        columns_to_show = [col for col in display_columns if col in non_mitigated_risks.columns]
-        
-        edited_df = st.data_editor(
-            non_mitigated_risks[columns_to_show].sort_values('Risk Score', ascending=False),
-            column_config={"Reviewed": st.column_config.CheckboxColumn("Reviewed?", default=False)},
-            disabled=non_mitigated_risks.columns.drop('Reviewed'),
-            hide_index=True,
-            key="risk_editor"
-        )
-        
-        if st.button("Update Statuses from Checklist"):
-            reviewed_risk_ids = edited_df[edited_df['Reviewed'] == True]['Risk ID'].tolist()
-            if reviewed_risk_ids:
-                main_df = st.session_state.df
-                main_df.loc[main_df['Risk ID'].isin(reviewed_risk_ids), 'Status'] = 'Mitigated'
-                st.session_state.df = main_df
-                st.success(f"Updated status for {len(reviewed_risk_ids)} risk(s) to 'Mitigated'.")
-                st.rerun()
-            else:
-                st.warning("No risks were selected for update.")
-    else:
-        st.write("No non-mitigated risks to display for the selected filters.")
+            with c2:
+                if st.button("Generate PDF Report", use_container_width=True):
+                    with st.spinner("Creating PDF file..."):
+                        st.session_state.pdf_report = ReportManager.generate_pdf_report(filtered_df, risk_matrix_fig, current_filters, session_mitigated_df)
+                if 'pdf_report' in st.session_state:
+                    st.download_button("Download PDF", st.session_state.pdf_report, "GRC_Report.pdf", use_container_width=True)
+        else: st.warning("No data to report.")
 
 if __name__ == "__main__":
     main()
+
