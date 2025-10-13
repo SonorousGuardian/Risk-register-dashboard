@@ -607,7 +607,17 @@ def main():
             else:
                 st.warning("⚠️ No data available for generating reports.")
 
+            st.markdown("---")
+            st.markdown(
+            '<div style="text-align:center; color:#9aa0a6; font-size:13px;">'
+            'Built by Amritesh'
+            '</div>',
+            unsafe_allow_html=True
+        )
+
+
 if __name__ == "__main__":
     main()
+
 
 
