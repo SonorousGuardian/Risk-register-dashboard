@@ -481,7 +481,11 @@ def main():
                 if 'pdf_report' in st.session_state:
                     st.download_button("Download PDF", st.session_state.pdf_report, "GRC_Report.pdf", use_container_width=True)
         else: st.warning("No data to report.")
+    # --- FOOTER ---
+    st.markdown("---")
+    st.caption("Developed by Amritesh | GRC Risk Dashboard v3.0")
 
 if __name__ == "__main__":
     main()
+
 
