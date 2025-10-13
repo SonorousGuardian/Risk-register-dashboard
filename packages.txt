@@ -12,4 +12,4 @@ libdrm2
 libgbm1
 libasound2
 chromium-driver
-chromium-browser
+chromium
