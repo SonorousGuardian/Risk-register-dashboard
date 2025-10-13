@@ -166,8 +166,10 @@ class VisualizationManager:
         if df.empty or 'Control Effectiveness' not in df.columns:
             return go.Figure().update_layout(title='No data for control analysis', template='plotly_dark')
         
-        fig = px.box(df, x='Control Effectiveness', y='Risk Score', 
-                     title='Risk Score by Control Effectiveness',
+        avg_scores = df.groupby('Control Effectiveness')['Risk Score'].mean().reset_index().sort_values('Risk Score', ascending=False)
+
+        fig = px.bar(avg_scores, x='Control Effectiveness', y='Risk Score', 
+                     title='Average Risk Score by Control Effectiveness',
                      color='Control Effectiveness',
                      color_discrete_map={
                          'Low': Config.COLORS['high_risk'],
@@ -175,7 +177,7 @@ class VisualizationManager:
                          'High': Config.COLORS['low_risk']
                      },
                      category_orders={"Control Effectiveness": ["Low", "Medium", "High"]})
-        fig.update_layout(template='plotly_dark', height=400)
+        fig.update_layout(template='plotly_dark', height=400, yaxis_title="Average Risk Score")
         return fig
 
 class UIComponents:
@@ -254,9 +256,9 @@ class ReportManager:
         elements.append(PageBreak())
         
         elements.append(Paragraph("<b>Risk Assessment Matrix</b>", styles['Heading2']))
-        img_bytes = pio.to_image(risk_matrix_fig, format="png", width=700, height=525)
+        img_bytes = pio.to_image(risk_matrix_fig, format="png", width=550, height=412)
         elements.append(ReportLabImage(io.BytesIO(img_bytes)))
-        elements.append(Spacer(1, 24))
+        elements.append(PageBreak())
 
         table_style = TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#4F81BD")),
@@ -271,6 +273,15 @@ class ReportManager:
         
         report_cols = ['Risk ID', 'Title', 'Risk Owner', 'Risk Score', 'Status']
 
+        non_mitigated_df = df[~df['Status'].isin(['Mitigated', 'Closed', 'Accepted'])].sort_values('Risk Score', ascending=False)
+        if not non_mitigated_df.empty:
+            elements.append(Paragraph("<b>Active (Non-Mitigated) Risks</b>", styles['Heading2']))
+            data = [report_cols] + non_mitigated_df[report_cols].values.tolist()
+            table = Table(data, colWidths=[inch, 4*inch, 1.5*inch, inch, inch])
+            table.setStyle(table_style)
+            elements.append(table)
+            elements.append(PageBreak())
+
         if not session_mitigated_df.empty:
             elements.append(Paragraph("<b>Risks Mitigated This Session</b>", styles['Heading2']))
             data = [report_cols] + session_mitigated_df[report_cols].values.tolist()
@@ -283,15 +294,6 @@ class ReportManager:
         if not mitigated_df.empty:
             elements.append(Paragraph("<b>All Mitigated Risks (in current view)</b>", styles['Heading2']))
             data = [report_cols] + mitigated_df[report_cols].values.tolist()
-            table = Table(data, colWidths=[inch, 4*inch, 1.5*inch, inch, inch])
-            table.setStyle(table_style)
-            elements.append(table)
-            elements.append(Spacer(1, 24))
-            
-        non_mitigated_df = df[~df['Status'].isin(['Mitigated', 'Closed', 'Accepted'])].sort_values('Risk Score', ascending=False)
-        if not non_mitigated_df.empty:
-            elements.append(Paragraph("<b>Active (Non-Mitigated) Risks</b>", styles['Heading2']))
-            data = [report_cols] + non_mitigated_df[report_cols].values.tolist()
             table = Table(data, colWidths=[inch, 4*inch, 1.5*inch, inch, inch])
             table.setStyle(table_style)
             elements.append(table)
@@ -323,6 +325,7 @@ def main():
     creds_info = None
     if data_source == "Google Sheets (Live)":
         if st.session_state.gsheet_creds_file:
+            st.session_state.gsheet_creds_file.seek(0)
             creds_info = json.load(st.session_state.gsheet_creds_file)
         
         if st.session_state.gsheet_url and creds_info:
@@ -343,10 +346,48 @@ def main():
              st.session_state.initial_mitigated_ids = set(st.session_state.df[st.session_state.df['Status'] == 'Mitigated']['Risk ID'])
         df_loaded = True
 
+    df = st.session_state.get('df', pd.DataFrame())
+
+    with st.sidebar:
+        with st.expander("➕ **Add New Risk**"):
+            with st.form("new_risk_form", clear_on_submit=True):
+                st.subheader("New Risk Details")
+                title = st.text_input("Risk Title*")
+                owner = st.selectbox("Risk Owner*", Config.RISK_OWNERS)
+                category = st.selectbox("Risk Category*", Config.RISK_CATEGORIES)
+                c1, c2 = st.columns(2)
+                likelihood = c1.slider("Likelihood*", 1, 5, 3)
+                impact = c2.slider("Impact*", 1, 5, 3)
+                control = st.selectbox("Control Effectiveness*", Config.CONTROL_EFFECTIVENESS_OPTIONS, index=1)
+                
+                submitted = st.form_submit_button("Add Risk", type="primary", use_container_width=True)
+                if submitted and title:
+                    if not df_loaded:
+                        st.warning("Please load data before adding a new risk.")
+                    else:
+                        new_risk_score = likelihood * impact
+                        
+                        if not df.empty and 'Risk ID' in df.columns:
+                            numeric_ids = pd.to_numeric(df['Risk ID'].str.extract(r'R-(\d+)')[0], errors='coerce').dropna()
+                            max_id = int(numeric_ids.max()) if not numeric_ids.empty else 999
+                            new_id = f"R-{max_id + 1}"
+                        else:
+                            new_id = "R-1000"
+
+                        new_row = pd.DataFrame([{'Risk ID': new_id, 'Title': title, 'Risk Owner': owner, 'Risk Category': category, 'Likelihood': likelihood, 'Impact': impact, 'Risk Score': new_risk_score, 'Status': 'Open', 'Control Effectiveness': control, 'Last Updated': date.today()}])
+
+                        if st.session_state.is_live:
+                            with st.spinner("Adding risk to Google Sheet..."):
+                                data_manager.upload_df_to_gsheet(creds_info, st.session_state.gsheet_url, new_row)
+                            st.success(f"Added risk {new_id} to Google Sheet!")
+                        else:
+                            st.session_state.df = pd.concat([df, data_manager.preprocess_data(new_row)], ignore_index=True)
+                            st.success(f"Added risk {new_id} to session data!")
+                        time.sleep(1)
+                        st.rerun()
+
     if not df_loaded:
         st.info("👋 **Welcome!** Please configure a data source in the sidebar to begin."); return
-
-    df = st.session_state.df
 
     total_risks = len(df); mitigated_risks = len(df[df['Status'] == 'Mitigated'])
     avg_score = df['Risk Score'].mean(); critical_risks = len(df[df['Risk Score'] >= 20])
@@ -375,15 +416,9 @@ def main():
         st.session_state.last_filters = current_filters
         filtered_df = data_manager.filter_data(df, current_filters)
 
-        if not st.session_state.get('is_live', True):
-            with st.expander("📤 **Export / Upload**"):
+        if not st.session_state.is_live:
+            with st.expander("📤 **Export Data**"):
                 st.download_button("Download Updated CSV", data=df.to_csv(index=False).encode('utf-8'), file_name=f"updated_risks.csv", use_container_width=True)
-                if st.button("Upload Session Data to Google Sheet", use_container_width=True, type="primary"):
-                    if 'gsheet_creds_file' in st.session_state and st.session_state.gsheet_creds_file and 'gsheet_url' in st.session_state and st.session_state.gsheet_url:
-                        creds_info_for_upload = json.load(st.session_state.gsheet_creds_file)
-                        if data_manager.upload_df_to_gsheet(creds_info_for_upload, st.session_state.gsheet_url, df):
-                           st.success("Successfully uploaded data!")
-                    else: st.warning("Please configure Google Sheets connection first to upload.")
 
     tab1, tab2, tab3, tab4 = st.tabs(["📋 **Register**", "📊 **Analytics**", "✅ **Checklist**", "📄 **Reports**"])
 
@@ -427,7 +462,7 @@ def main():
         if not filtered_df.empty:
             current_mitigated_ids = set(df[df['Status'] == 'Mitigated']['Risk ID'])
             session_mitigated_ids = current_mitigated_ids - st.session_state.initial_mitigated_ids
-            session_mitigated_df = df[df['Risk ID'].isin(session_mitigated_ids)][['Risk ID', 'Title', 'Risk Owner', 'Risk Score', 'Status']]
+            session_mitigated_df = df[df['Risk ID'].isin(session_mitigated_ids)]
 
             risk_matrix_fig = VisualizationManager.create_risk_matrix(filtered_df)
             c1, c2 = st.columns(2)
