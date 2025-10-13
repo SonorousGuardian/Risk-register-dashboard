@@ -30,7 +30,7 @@ from openpyxl.drawing.image import Image as OpenpyxlImage
 # --- CONFIGURATION ---
 class Config:
     """Configuration constants for the dashboard"""
-    PAGE_TITLE = "GRC Risk Dashboard"
+    PAGE_TITLE = "Advanced GRC Dashboard"
     PAGE_ICON = "🛡️"
     LAYOUT = "wide"
     
@@ -72,23 +72,43 @@ class DataManager:
             st.error(f"Error reading live data: {e}")
             return pd.DataFrame()
 
-    def update_live_data(_self, creds_json: dict, sheet_url: str, risk_ids: list, new_status: str):
-        gc = _self._get_gspread_client(creds_json)
-        if not gc: return
+    def update_live_data(self, creds_json: dict, sheet_url: str, risk_ids: list, new_status: str):
+        """
+        Update the status of specified risks in Google Sheets.
+        Automatically sets 'Last Updated' to today.
+        """
         try:
+            # Authenticate
+            gc = self._get_gspread_client(creds_json)
+            if not gc:
+                st.error("Failed to authenticate with Google Sheets.")
+                return
+
+            # Open sheet
             spreadsheet = gc.open_by_url(sheet_url)
             worksheet = spreadsheet.sheet1
+
+            # Get headers
             headers = worksheet.row_values(1)
             risk_id_col = headers.index('Risk ID') + 1
             status_col = headers.index('Status') + 1
             last_updated_col = headers.index('Last Updated') + 1
-            cell_list = worksheet.findall(rf'({"|".join(risk_ids)})', in_column=risk_id_col)
-            for cell in cell_list:
-                worksheet.update_cell(cell.row, status_col, new_status)
-                worksheet.update_cell(cell.row, last_updated_col, date.today().strftime('%Y-%m-%d'))
+
+            # Update each selected risk
+            for risk_id in risk_ids:
+                try:
+                    cell = worksheet.find(risk_id, in_column=risk_id_col)
+                    worksheet.update_cell(cell.row, status_col, new_status)
+                    worksheet.update_cell(cell.row, last_updated_col, date.today().strftime('%Y-%m-%d'))
+                except gspread.exceptions.CellNotFound:
+                    st.warning(f"Risk ID {risk_id} not found in Google Sheet.")
+
+            # Clear cache so live data refreshes
             st.cache_data.clear()
-        except (ValueError, gspread.exceptions.APIError) as e:
-            st.error(f"Failed to update sheet: {e}")
+        except Exception as e:
+            st.error(f"Failed to update Google Sheet: {e}")
+
+
 
     def upload_df_to_gsheet(_self, creds_json: dict, sheet_url: str, df: pd.DataFrame):
         gc = _self._get_gspread_client(creds_json)
@@ -430,32 +450,76 @@ def main():
         st.plotly_chart(VisualizationManager.create_distribution_charts(filtered_df), use_container_width=True)
         st.plotly_chart(VisualizationManager.create_control_effectiveness_chart(filtered_df), use_container_width=True)
 
+    
     with tab3:
         st.header("🔄 Risk Mitigation Checklist")
+
+        # Active risks (not Mitigated/Closed) in current filtered view
         active_risks_in_filter = filtered_df[~filtered_df['Status'].isin(['Mitigated', 'Closed'])].copy()
-        
-        total_mitigatable = len(df[~df['Status'].isin(['Closed', 'Accepted'])])
-        already_mitigated_total = len(df[df['Status'] == 'Mitigated'])
-        
+
         if not active_risks_in_filter.empty:
+            # Add a checkbox column for mitigation
             active_risks_in_filter.insert(0, 'Mitigate', False)
-            edited_df = st.data_editor(active_risks_in_filter[['Mitigate', 'Risk ID', 'Title', 'Risk Score', 'Status']], use_container_width=True, hide_index=True, key="checklist_editor", column_config={'Mitigate': st.column_config.CheckboxColumn("Select"), 'Risk Score': st.column_config.ProgressColumn("Score", min_value=1, max_value=25, format="%d")})
-            
-            newly_selected_count = edited_df['Mitigate'].sum()
-            progress_value = (already_mitigated_total + newly_selected_count) / total_mitigatable if total_mitigatable > 0 else 0
-            st.progress(progress_value, text=f"Overall Mitigation Progress ({progress_value:.0%})")
-            
-            s1, s2, s3 = st.columns(3)
-            s1.metric("Active Risks in View", len(active_risks_in_filter)); s2.metric("Selected for Mitigation", newly_selected_count); s3.metric("High/Critical in View", len(active_risks_in_filter[active_risks_in_filter['Risk Score'] >= 15]))
-            
+
+            edited_df = st.data_editor(
+                active_risks_in_filter[['Mitigate', 'Risk ID', 'Title', 'Risk Score', 'Status']],
+                use_container_width=True,
+                hide_index=True,
+                key="checklist_editor",
+                column_config={
+                    'Mitigate': st.column_config.CheckboxColumn("Select"),
+                    'Risk Score': st.column_config.ProgressColumn("Score", min_value=1, max_value=25, format="%d")
+                }
+            )
+
+            # Get selected risks
             selected_ids = edited_df[edited_df['Mitigate']]['Risk ID'].tolist()
-            if st.button(f"🚀 Update {len(selected_ids)} Risks to Mitigated", disabled=not selected_ids, type="primary"):
-                if st.session_state.is_live:
-                    data_manager.update_live_data(creds_info, st.session_state.gsheet_url, selected_ids, 'Mitigated')
-                else:
-                    st.session_state.df.loc[st.session_state.df['Risk ID'].isin(selected_ids), 'Status'] = 'Mitigated'
-                st.success("Risks updated!"); time.sleep(1); st.rerun()
-        else: st.success("🎉 No active risks in the current filter!")
+            total_mitigatable = len(df[~df['Status'].isin(['Closed', 'Accepted'])])
+            already_mitigated_total = len(df[df['Status'] == 'Mitigated'])
+            newly_selected_count = len(selected_ids)
+            progress_value = (already_mitigated_total + newly_selected_count) / total_mitigatable if total_mitigatable > 0 else 0
+
+            st.progress(progress_value, text=f"Overall Mitigation Progress ({progress_value:.0%})")
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Active Risks in View", len(active_risks_in_filter))
+            c2.metric("Selected for Mitigation", newly_selected_count)
+            c3.metric("High/Critical in View", len(active_risks_in_filter[active_risks_in_filter['Risk Score'] >= 15]))
+
+            # Update button
+            if selected_ids:
+                if st.button(f"🚀 Update {len(selected_ids)} Risks to Mitigated", type="primary"):
+                    successfully_updated = []
+
+                    if st.session_state.is_live and creds_info and st.session_state.gsheet_url:
+                        # Update Google Sheet live
+                        try:
+                            data_manager.update_live_data(creds_info, st.session_state.gsheet_url, selected_ids, 'Mitigated')
+                            successfully_updated = selected_ids.copy()
+                            st.success(f"{len(successfully_updated)} risks updated in Google Sheets!")
+                        except Exception as e:
+                            st.error(f"Failed to update risks in Google Sheets: {e}")
+                    else:
+                        # Update session data only
+                        st.session_state.df.loc[st.session_state.df['Risk ID'].isin(selected_ids), 'Status'] = 'Mitigated'
+                        successfully_updated = selected_ids.copy()
+                        st.success(f"{len(successfully_updated)} risks updated in session!")
+
+                    if successfully_updated:
+                        # Remove updated risks from checklist view immediately
+                        active_risks_in_filter = active_risks_in_filter[~active_risks_in_filter['Risk ID'].isin(successfully_updated)]
+
+                        # Update main session DataFrame so KPIs, charts, and tables refresh
+                        st.session_state.df.loc[st.session_state.df['Risk ID'].isin(successfully_updated), 'Status'] = 'Mitigated'
+
+                        # Force rerender of the dashboard
+                        st.experimental_rerun() if hasattr(st, "experimental_rerun") else None
+
+        else:
+            st.success("🎉 No active risks in the current filter!")
+
+
+
+
             
     with tab4:
         st.header("📄 Reports & Exports")
@@ -481,13 +545,7 @@ def main():
                 if 'pdf_report' in st.session_state:
                     st.download_button("Download PDF", st.session_state.pdf_report, "GRC_Report.pdf", use_container_width=True)
         else: st.warning("No data to report.")
-    # --- FOOTER ---
-    st.markdown("---")
-    st.caption("Developed by Amritesh Shrivastava| GRC Risk Dashboard")
 
 if __name__ == "__main__":
     main()
-
-
-
 
