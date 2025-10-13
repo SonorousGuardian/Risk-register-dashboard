@@ -610,14 +610,15 @@ def main():
     st.markdown("---")
     st.markdown(
             '<div style="text-align:center; color:#9aa0a6; font-size:13px;">'
-            'Built by Amritesh'
-            '</div>',
+            'Built by Amritesh Shrivastava'
+            '</div>', 
             unsafe_allow_html=True
     )
 
 
 if __name__ == "__main__":
     main()
+
 
 
 
