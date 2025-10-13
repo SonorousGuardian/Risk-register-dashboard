@@ -483,9 +483,10 @@ def main():
         else: st.warning("No data to report.")
     # --- FOOTER ---
     st.markdown("---")
-    st.caption("Developed by Amritesh | GRC Risk Dashboard v3.0")
+    st.caption("Developed by Amritesh Shrivastava| GRC Risk Dashboard")
 
 if __name__ == "__main__":
     main()
+
 
 
