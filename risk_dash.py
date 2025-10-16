@@ -37,7 +37,7 @@ except ImportError:
 # --- CONFIGURATION ---
 class Config:
     """Configuration constants for the dashboard"""
-    PAGE_TITLE = "Advanced GRC Dashboard"
+    PAGE_TITLE = "Risk Management Dashboard"
     PAGE_ICON = "🛡️"
     LAYOUT = "wide"
     
@@ -1383,7 +1383,8 @@ def main():
 
     # Footer
     st.markdown("---")
-    st.caption("Developed by Amritesh | GRC Risk Dashboard v3.1 | Enhanced with better error handling and performance")
+    st.caption("Developed by Amritesh Shrivastava | BMSCE College")
 
 if __name__ == "__main__":
     main()
+
